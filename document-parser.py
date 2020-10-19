@@ -1,6 +1,7 @@
 #/usr/bin#/python
 import boto3
 from elasticsearch import Elasticsearch 
+from datetime import datetime, timezone, timedelta
 
 # Enviar cada linha do CSV para uma fila SQS
 def open_file(file_path):
@@ -64,6 +65,8 @@ def feed_data_into_es(es, data):
 
 def main():
     file_path = "data/proposicoes-2020.csv"
+
+    
     es = Elasticsearch([{'host':'search-es-for-demo-o7wbu5722qanrtbbula3lglv4e.us-east-1.es.amazonaws.com',
         'port':443}], 
         use_ssl = True,
@@ -74,10 +77,14 @@ def main():
     json_list = csv_parser(lines)
     
     for value in json_list:
+        datetime_now = datetime.utcnow()
+
         if value:
             print("-"*20)
             key_phrases_list = comprehend_enrich_text(value)
+
             value["key_phrases"] = key_phrases_list
+            value["feed_date"] = datetime_now
 
             feed_data_into_es(es, value)
 
