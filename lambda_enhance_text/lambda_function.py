@@ -1,7 +1,7 @@
 #/usr/bin#/python
 import boto3
 import os
-# from elasticsearch import Elasticsearch 
+from elasticsearch import Elasticsearch 
 from datetime import datetime, timezone, timedelta
 import json
 
@@ -33,11 +33,12 @@ def feed_data_into_es(es, data):
 
 def lambda_handler(event, context):
     
-    # es = Elasticsearch([{'host':'search-es-for-demo-o7wbu5722qanrtbbula3lglv4e.us-east-1.es.amazonaws.com',
-    #     'port':443}], 
-    #     use_ssl = True,
-    #     verify_certs = True
-    #     )
+    es = Elasticsearch([{'host':'search-es-for-demo-o7wbu5722qanrtbbula3lglv4e.us-east-1.es.amazonaws.com',
+        'port':443}], 
+        use_ssl = True,
+        verify_certs = True
+        )
+
     
     try:
         sqs_message = event["Records"][0]["body"].replace("\'", "\"")
@@ -50,7 +51,7 @@ def lambda_handler(event, context):
         message_body["feed_date"] = datetime_now
         
         print(message_body)
-        # feed_data_into_es(es, message_body)
+        feed_data_into_es(es, message_body)
     except Exception as e:
         print(e)
         raise e
