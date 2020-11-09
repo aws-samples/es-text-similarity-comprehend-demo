@@ -1,0 +1,185 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Stack to provision complete rekognition
+
+Parameters:
+  BucketName:
+    Description: The S3 bucket name to upload CSV files
+    Type: String
+    Default: changeme
+  BucketLambdaCode:
+    Description: The S3 bucket where you uploaded your lambda code
+    Type: String
+    Default: changeme
+  LanguageCode:
+    Description: The language code to use in Amazon Comprehend to analyze your files
+    Type: String
+    Default: pt
+
+
+Resources:
+  # SQS Queue that will receive the messages from Textract
+  SqsEsComprehend:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: sqs-es-comprehend
+
+  # sqsQueuePolicy:
+  #   Type: AWS::SQS::QueuePolicy
+  #   DependsOn:
+  #     - sqsConsumerQueue
+  #   Properties:
+  #     Queues:
+  #       - !Ref sqsConsumerQueue
+  #     PolicyDocument:
+  #       Version: 2012-10-17
+  #       Statement:
+  #         - Effect: Allow
+  #           Principal:
+  #             AWS: '*'
+  #           Action:
+  #             - SQS:SendMessage
+  #           Resource: !GetAtt sqsConsumerQueue.Arn
+  #           Condition:
+  #             ArnLike:
+  #               # Estatico para nao criar dependencia entre o bucket do S3
+  #               aws:SourceArn: !Join [ "", ["arn:aws:s3:*:*:", !Ref BucketName ] ]   
+
+  # Lambda Role for Textract
+  LambdaCsvParserRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+  
+  # Lambda function that will trigger textract
+  LambdaCsvParser:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - LambdaCsvParserRole
+    Properties:
+      Code:
+        S3Bucket: !Ref BucketLambdaCode
+        S3Key: lambda/lambda_csv_parser.zip
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaCsvParserRole.Arn
+      Runtime: python3.8
+      Timeout: 900
+      MemorySize: 1536
+      Environment:
+        Variables:
+          SQS_URL: !GetAtt SqsEsComprehend.QueueName
+          BUCKET_NAME: !Ref BucketName
+
+  # S3 that trigger lambda function when a new object is uploaded
+  s3Bucket:
+      DependsOn: 
+        - LambdaCsvParser
+      Type: AWS::S3::Bucket
+      Properties: 
+        AccessControl: Private
+        BucketName: !Ref BucketName
+        NotificationConfiguration:
+          LambdaConfigurations:
+            - Event: s3:ObjectCreated:*
+              Function: !GetAtt LambdaCsvParser.Arn
+              Filter:
+                  S3Key: # Filter just the necessary to trigger the lambda Function
+                      Rules:
+                        - Name: prefix
+                          Value: data/
+
+  # Giving permission to S3 invoke the lambda function
+  BucketPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaCsvParser
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub arn:aws:s3:::${BucketName}
+
+  # Lambda Role for Comprehend
+  LambdaEnhanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/ComprehendFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+  
+  LambdaFunctionEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 10
+      Enabled: true
+      EventSourceArn: !GetAtt SqsEsComprehend.Arn
+      FunctionName: !GetAtt LambdaEnhance.Arn
+
+  # Lambda Layer with AWS Datawrangler to use in the Lambda Athena function
+  LambdaLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties: 
+      CompatibleRuntimes: 
+        - python3.6
+      Content: 
+        S3Bucket: !Ref BucketLambdaCode
+        S3Key: layer/elastic.zip
+      Description: Elasticserach module to use in lambda
+      LayerName: elastic
+
+  # Lambda function that will trigger amazon comprehend batch process
+  LambdaEnhance:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - LambdaEnhanceRole
+      - ComprehendRole
+    Properties:
+      Code:
+        S3Bucket: !Ref BucketLambdaCode
+        S3Key: lambda/lambda_enhance.zip
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaComprehendRole.Arn
+      Runtime: python3.7
+      Timeout: 30
+      MemorySize: 512
+      VpcConfig:
+        SecurityGroupIds:
+          - ""
+        SubnetIds:
+          - ""
+      Environment:
+        Variables:
+          LANGUAGE: !Ref LanguageCode
+          BUCKET_NAME: !Ref BucketName
+          ES_HOST: "Fill with ES Host"
+
+Outputs:
+  QueueURL: 
+    Description: "URL of Amazon SQS Queue hat will be used on the other stack"
+    Value: 
+      Ref: SqsTextractMessages
+  BucketName: 
+    Description: "Bucket name that will be used on the other stack"
+    Value: 
+      Ref: BucketName

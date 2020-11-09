@@ -58,8 +58,8 @@ def lambda_handler(event, context):
     try:
         file_path = event["Records"][0]["s3"]["object"]["key"]
         file_name = "tmp-01.csv"
-        queue_url = os.getenv("SQS_URL", "https://sqs.us-east-1.amazonaws.com/936068047509/sqs-es-comprehend")
-        bucket_name = os.getenv("BUCKET_NAME", "data-comprehend-es-demo")
+        queue_url = os.getenv("SQS_URL", "")
+        bucket_name = os.getenv("BUCBUCKET_NAMEKET_NAME", "")
         
         # Get file from s3
         download_s3_file(bucket_name, file_path, file_name)
