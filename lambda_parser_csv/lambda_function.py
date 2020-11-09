@@ -39,11 +39,12 @@ def csv_parser(lines):
 def send_to_amazon_sqs(sqs, json_list, queue_url):
     print("Seding messages to Amazon SQS")
     for item in json_list:
-        response = sqs.send_message(
-            QueueUrl=queue_url,
-            MessageBody=str(item),
-        )
-    print("Finished process of sending messages")
+        if item:
+            response = sqs.send_message(
+                QueueUrl=queue_url,
+                MessageBody=str(item),
+            )
+            print("Finished process of sending messages")
 
 
 def download_s3_file(bucket_name, object_name, file_name):
@@ -51,13 +52,14 @@ def download_s3_file(bucket_name, object_name, file_name):
     s3.download_file(bucket_name, object_name, f"/tmp/{file_name}")
     print("Downloaded file")
 
+
 def lambda_handler(event, context):
 
     try:
         file_path = event["Records"][0]["s3"]["object"]["key"]
         file_name = "tmp-01.csv"
-        queue_url = os.getenv("SQS_URL", "")
-        bucket_name = os.getenv("BUCKET_NAME", "")
+        queue_url = os.getenv("SQS_URL", "https://sqs.us-east-1.amazonaws.com/936068047509/sqs-es-comprehend")
+        bucket_name = os.getenv("BUCKET_NAME", "data-comprehend-es-demo")
         
         # Get file from s3
         download_s3_file(bucket_name, file_path, file_name)

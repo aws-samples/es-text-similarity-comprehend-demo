@@ -39,9 +39,6 @@ def lambda_handler(event, context):
     #     verify_certs = True
     #     )
     
-    if not event["Records"][0]["body"]:
-        return "Not to precess"
-    
     try:
         sqs_message = event["Records"][0]["body"].replace("\'", "\"")
         message_body = json.loads(sqs_message)
