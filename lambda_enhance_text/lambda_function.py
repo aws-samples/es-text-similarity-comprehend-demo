@@ -24,7 +24,6 @@ def comprehend_enrich_text(text):
 
     return key_phrases_list
 
-
 def feed_data_into_es(es, data):
     index_name = "proposicoes"
     res = es.index(index=index_name,doc_type='_doc',id=data.get("id"),body=data)
@@ -33,7 +32,7 @@ def feed_data_into_es(es, data):
 
 def lambda_handler(event, context):
     
-    es = Elasticsearch([{'host':'search-es-for-demo-o7wbu5722qanrtbbula3lglv4e.us-east-1.es.amazonaws.com',
+    es = Elasticsearch([{'host':os.getenv("ES_HOST", ""),
         'port':443}], 
         use_ssl = True,
         verify_certs = True
