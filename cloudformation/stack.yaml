@@ -22,6 +22,14 @@ Parameters:
     Description: ID of the second private subnet to deploy Lambda in
     Type: String
     Default: changeme
+  Nat1PublicIP:
+    Description: Public IP of the first Nat Gateway
+    Type: String
+    Default: changeme
+  Nat2PublicIP:
+    Description: Public IP of the second Nat Gateway
+    Type: String
+    Default: changeme
   SecurityGroup:
     Description: Security group to associate with AWS Lambda
     Type: String
@@ -150,6 +158,7 @@ Resources:
     DependsOn:
       - LambdaEnhanceRole
       - LambdaLayer
+      - ElasticSearchDomain
     Properties:
       Code:
         S3Bucket: !Ref BucketLambdaCode
@@ -171,7 +180,7 @@ Resources:
         Variables:
           LANGUAGE: !Ref LanguageCode
           BUCKET_NAME: !Ref BucketName
-          ES_HOST: "Fill with ES Host"
+          ES_HOST: !GetAtt ElasticSearchDomain.DomainEndpoint
 
   # ElasticSearch Creation https://docs.aws.amazon.com/pt_br/AWSCloudFormation/latest/UserGuide/aws-resource-elasticsearch-domain.html
   ElasticSearchDomain:
@@ -199,9 +208,8 @@ Resources:
             IpAddress:
               aws:SourceIp:
                 - !Ref YourPublicIP
-                - '177.68.43.188'
-                - '54.205.62.131'
-                - '54.197.135.52'
+                - !Ref Nat1PublicIP
+                - !Ref Nat2PublicIP
 
 Outputs:
   QueueURL: 
