@@ -14,6 +14,22 @@ Parameters:
     Description: The language code to use in Amazon Comprehend to analyze your files
     Type: String
     Default: pt
+  PrivateSubnetID1:
+    Description: ID of the first private subnet to deploy Lambda in
+    Type: String
+    Default: changeme
+  PrivateSubnetID2:
+    Description: ID of the second private subnet to deploy Lambda in
+    Type: String
+    Default: changeme
+  SecurityGroup:
+    Description: Security group to associate with AWS Lambda
+    Type: String
+    Default: changeme
+  YourPublicIP:
+    Description: Your public IP
+    Type: String
+    Default: changeme
 
 
 Resources:
@@ -21,28 +37,7 @@ Resources:
   SqsEsComprehend:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: sqs-es-comprehend
-
-  # sqsQueuePolicy:
-  #   Type: AWS::SQS::QueuePolicy
-  #   DependsOn:
-  #     - sqsConsumerQueue
-  #   Properties:
-  #     Queues:
-  #       - !Ref sqsConsumerQueue
-  #     PolicyDocument:
-  #       Version: 2012-10-17
-  #       Statement:
-  #         - Effect: Allow
-  #           Principal:
-  #             AWS: '*'
-  #           Action:
-  #             - SQS:SendMessage
-  #           Resource: !GetAtt sqsConsumerQueue.Arn
-  #           Condition:
-  #             ArnLike:
-  #               # Estatico para nao criar dependencia entre o bucket do S3
-  #               aws:SourceArn: !Join [ "", ["arn:aws:s3:*:*:", !Ref BucketName ] ]   
+      QueueName: sqs-es-comprehend-new  
 
   # Lambda Role for Textract
   LambdaCsvParserRole:
@@ -118,6 +113,7 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
         - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -153,21 +149,24 @@ Resources:
     Type: AWS::Lambda::Function
     DependsOn:
       - LambdaEnhanceRole
-      - ComprehendRole
+      - LambdaLayer
     Properties:
       Code:
         S3Bucket: !Ref BucketLambdaCode
         S3Key: lambda/lambda_enhance.zip
       Handler: lambda_function.lambda_handler
-      Role: !GetAtt LambdaComprehendRole.Arn
+      Role: !GetAtt LambdaEnhanceRole.Arn
       Runtime: python3.7
       Timeout: 30
       MemorySize: 512
+      Layers:
+        - !Ref LambdaLayer
       VpcConfig:
         SecurityGroupIds:
-          - ""
+          - !Ref SecurityGroup
         SubnetIds:
-          - ""
+          - !Ref PrivateSubnetID1
+          - !Ref PrivateSubnetID2
       Environment:
         Variables:
           LANGUAGE: !Ref LanguageCode
@@ -175,13 +174,40 @@ Resources:
           ES_HOST: "Fill with ES Host"
 
   # ElasticSearch Creation https://docs.aws.amazon.com/pt_br/AWSCloudFormation/latest/UserGuide/aws-resource-elasticsearch-domain.html
-  Type: AWS::Elasticsearch::Domain
+  ElasticSearchDomain:
+    Type: AWS::Elasticsearch::Domain
+    Properties:
+      DomainName: es-comprehend-demo
+      EBSOptions:
+        EBSEnabled: true
+        VolumeSize: 30
+        VolumeType: gp2
+      ElasticsearchClusterConfig:
+        DedicatedMasterEnabled: false
+        InstanceCount: 3
+        InstanceType: t2.medium.elasticsearch
+      ElasticsearchVersion: '7.7'
+      AccessPolicies:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS: '*'
+          Action: 'es:*'
+          Resource: !Sub 'arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/es-comprehend-demo/*'
+          Condition:
+            IpAddress:
+              aws:SourceIp:
+                - !Ref YourPublicIP
+                - '177.68.43.188'
+                - '54.205.62.131'
+                - '54.197.135.52'
 
 Outputs:
   QueueURL: 
     Description: "URL of Amazon SQS Queue hat will be used on the other stack"
     Value: 
-      Ref: SqsTextractMessages
+      Ref: SqsEsComprehend
   BucketName: 
     Description: "Bucket name that will be used on the other stack"
     Value: 
