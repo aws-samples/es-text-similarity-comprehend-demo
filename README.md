@@ -63,3 +63,63 @@ cd layer && aws s3 cp elastic.zip s3://<MY_BUCKET_NAME>/layer/
 ```
 
 **Now we need to create our stack using the CloudFormation template, available in cloudFormation/ folder in the root of this repository**
+
+## Cloudformation
+
+Now we need to open AWS Console and search for CloudFormation
+
+<p align="center"> 
+<img src="images/console01.png">
+</p>
+
+Now click in Create stack > With new resources (standard)
+
+<p align="center"> 
+<img src="images/console02.png">
+</p>
+
+We need to choose our cloudformation YAML available in this repository inside `cloudformation/` upload the file and click in next
+
+<p align="center"> 
+<img src="images/console03.png">
+</p>
+
+In Specify stack details we need to fill with the parameters to create our stack and also give the stack name.
+
+<p align="center"> 
+<img src="images/console04.png">
+</p>
+
+**BucketLambdaCode**: The bucket that we created early to upload our lambda ZIP file and also our Lambda Layer
+
+**BucketName**: The name of the bucket that we are going to use to upload our proposition files
+
+**LanguageCode:** Code of comprehend for text analysis
+
+**Nat1PublicIP:** The public IP of the first NAT Gateway
+
+**Nat2PublicIP:** The public IP of the second NAT Gateway
+
+**PrivateSubnetID1:** ID of the first private subnet
+
+**PrivateSubnetID2:** ID of the second private subnet
+
+**SecurityGroup:** ID of security group to associate with Lambda (You can use anyone)
+
+**YourPublicIP:** Your public IP
+
+> You can use the command below to find your public IP
+
+```shell
+curl ifconfig.me
+```
+
+And click and Next > Next.
+
+Scroll to the end of the page and mark **I acknowledge that AWS CloudFormation might create IAM resources** and Create Stack
+
+<p align="center"> 
+<img src="images/console05.png">
+</p>
+
+All the infraestructure will start to spin up, wait some minutes.
