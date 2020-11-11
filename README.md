@@ -123,3 +123,79 @@ Scroll to the end of the page and mark **I acknowledge that AWS CloudFormation m
 </p>
 
 All the infraestructure will start to spin up, wait some minutes.
+
+# Testing the solution
+
+All we need to do is upload the **data/proposicoes-2020.csv** file to the S3 bucket that our CloudFormation create and visualize the information in indexed in Elasticsearch via Kibana
+
+Check the Bucket name in the Outputs tab of CloudFormation Stack
+
+<p align="center"> 
+<img src="images/console06.png">
+</p>
+
+Upload the file to the bucket
+
+```shell
+aws s3 cp data/proposicoes-2020.csv s3://<BucketName>/data/
+```
+
+Change the value of BucketName to your bucket
+
+After that our Lambda will start to process our file, you can check that based on the SQS items in queue
+
+<p align="center"> 
+<img src="images/console07.png">
+</p>
+
+Now go to Elasticsearch Service and click in **es-comprehend-demo** get the Kibana URL to access Kibana Application
+
+<p align="center"> 
+<img src="images/console08.png">
+</p>
+
+We have to create the index pattern to be able to visualize the data in Kibana, create the index pattern with the name **proposicoes**
+
+<p align="center"> 
+<img src="images/console09.png">
+</p>
+
+Click in Next step
+
+For **Time Filter field name** select feed_date
+
+<p align="center"> 
+<img src="images/console10.png">
+</p>
+
+Click in Create index pattern
+
+<p align="center"> 
+<img src="images/console11.png">
+</p>
+
+Now we are able to visualize and search for patterns in our indexed data
+
+<p align="center"> 
+<img src="images/console12.png">
+</p>
+
+# Cleaning up
+
+Delete all the files inside of the provisioned S3 bucket.
+
+```shell
+aws s3 rm s3://<BUCKET_NAME> --recursive
+```
+
+Delete the CloudFormation stack.
+
+```shell
+aws cloudformation delete-stack --stack-name your-stack-name
+```
+
+Delete the S3 bucket that we used to store the lambda codes and lambda layer.
+
+```shell
+aws s3 rb s3://<BUCKET_LAMBDA_CODE> --force
+```
