@@ -1,0 +1,222 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Stack to provision complete rekognition
+
+Parameters:
+  BucketName:
+    Description: The S3 bucket name to upload CSV files
+    Type: String
+    Default: changeme
+  BucketLambdaCode:
+    Description: The S3 bucket where you uploaded your lambda code
+    Type: String
+    Default: changeme
+  LanguageCode:
+    Description: The language code to use in Amazon Comprehend to analyze your files
+    Type: String
+    Default: pt
+  PrivateSubnetID1:
+    Description: ID of the first private subnet to deploy Lambda in
+    Type: String
+    Default: changeme
+  PrivateSubnetID2:
+    Description: ID of the second private subnet to deploy Lambda in
+    Type: String
+    Default: changeme
+  Nat1PublicIP:
+    Description: Public IP of the first Nat Gateway
+    Type: String
+    Default: changeme
+  Nat2PublicIP:
+    Description: Public IP of the second Nat Gateway
+    Type: String
+    Default: changeme
+  SecurityGroup:
+    Description: Security group to associate with AWS Lambda
+    Type: String
+    Default: changeme
+  YourPublicIP:
+    Description: Your public IP
+    Type: String
+    Default: changeme
+
+
+Resources:
+  # SQS Queue that will receive the messages from Textract
+  SqsEsComprehend:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: sqs-es-comprehend-new  
+
+  # Lambda Role for Textract
+  LambdaCsvParserRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+  
+  # Lambda function that will trigger textract
+  LambdaCsvParser:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - LambdaCsvParserRole
+    Properties:
+      Code:
+        S3Bucket: !Ref BucketLambdaCode
+        S3Key: lambda/lambda_csv_parser.zip
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaCsvParserRole.Arn
+      Runtime: python3.8
+      Timeout: 900
+      MemorySize: 1536
+      Environment:
+        Variables:
+          SQS_URL: !Ref SqsEsComprehend
+          BUCKET_NAME: !Ref BucketName
+
+  # S3 that trigger lambda function when a new object is uploaded
+  s3Bucket:
+      DependsOn: 
+        - LambdaCsvParser
+      Type: AWS::S3::Bucket
+      Properties: 
+        AccessControl: Private
+        BucketName: !Ref BucketName
+        NotificationConfiguration:
+          LambdaConfigurations:
+            - Event: s3:ObjectCreated:*
+              Function: !GetAtt LambdaCsvParser.Arn
+              Filter:
+                  S3Key: # Filter just the necessary to trigger the lambda Function
+                      Rules:
+                        - Name: prefix
+                          Value: data/
+
+  # Giving permission to S3 invoke the lambda function
+  BucketPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref LambdaCsvParser
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub arn:aws:s3:::${BucketName}
+
+  # Lambda Role for Comprehend
+  LambdaEnhanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/ComprehendFullAccess
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSQSFullAccess
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+  
+  LambdaFunctionEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      BatchSize: 10
+      Enabled: true
+      EventSourceArn: !GetAtt SqsEsComprehend.Arn
+      FunctionName: !GetAtt LambdaEnhance.Arn
+
+  # Lambda Layer with AWS Datawrangler to use in the Lambda Athena function
+  LambdaLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties: 
+      CompatibleRuntimes: 
+        - python3.8
+      Content: 
+        S3Bucket: !Ref BucketLambdaCode
+        S3Key: layer/elastic.zip
+      Description: Elasticserach module to use in lambda
+      LayerName: elastic
+
+  # Lambda function that will trigger amazon comprehend batch process
+  LambdaEnhance:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - LambdaEnhanceRole
+      - LambdaLayer
+      - ElasticSearchDomain
+    Properties:
+      Code:
+        S3Bucket: !Ref BucketLambdaCode
+        S3Key: lambda/lambda_enhance.zip
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaEnhanceRole.Arn
+      Runtime: python3.8
+      Timeout: 30
+      MemorySize: 512
+      Layers:
+        - !Ref LambdaLayer
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnetID1
+          - !Ref PrivateSubnetID2
+      Environment:
+        Variables:
+          LANGUAGE: !Ref LanguageCode
+          BUCKET_NAME: !Ref BucketName
+          ES_HOST: !GetAtt ElasticSearchDomain.DomainEndpoint
+
+  # ElasticSearch Creation https://docs.aws.amazon.com/pt_br/AWSCloudFormation/latest/UserGuide/aws-resource-elasticsearch-domain.html
+  ElasticSearchDomain:
+    Type: AWS::Elasticsearch::Domain
+    Properties:
+      DomainName: es-comprehend-demo
+      EBSOptions:
+        EBSEnabled: true
+        VolumeSize: 30
+        VolumeType: gp2
+      ElasticsearchClusterConfig:
+        DedicatedMasterEnabled: false
+        InstanceCount: 3
+        InstanceType: t2.medium.elasticsearch
+      ElasticsearchVersion: '7.7'
+      AccessPolicies:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS: '*'
+          Action: 'es:*'
+          Resource: !Sub 'arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/es-comprehend-demo/*'
+          Condition:
+            IpAddress:
+              aws:SourceIp:
+                - !Ref YourPublicIP
+                - !Ref Nat1PublicIP
+                - !Ref Nat2PublicIP
+
+Outputs:
+  QueueURL: 
+    Description: "URL of Amazon SQS Queue hat will be used on the other stack"
+    Value: 
+      Ref: SqsEsComprehend
+  BucketName: 
+    Description: "Bucket name that will be used on the other stack"
+    Value: 
+      Ref: BucketName
