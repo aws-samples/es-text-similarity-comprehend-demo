@@ -1,6 +1,6 @@
 boto3==1.16.13
 botocore==1.19.13
-certifi==2020.11.8
+certifi==2022.12.7
 elasticsearch==7.9.1
 jmespath==0.10.0
 python-dateutil==2.8.1
